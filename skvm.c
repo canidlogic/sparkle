@@ -224,6 +224,34 @@ const char *skvm_reason(void) {
 }
 
 /*
+ * skvm_bufc function.
+ */
+int32_t skvm_bufc(void) {
+  
+  /* Check state */
+  if (!m_init) {
+    abort();
+  }
+  
+  /* Return value */
+  return m_bufc;
+}
+
+/*
+ * skvm_matc function.
+ */
+int32_t skvm_matc(void) {
+  
+  /* Check state */
+  if (!m_init) {
+    abort();
+  }
+  
+  /* Return value */
+  return m_matc;
+}
+
+/*
  * skvm_reset function.
  */
 void skvm_reset(int32_t i, int32_t w, int32_t h, int c) {
