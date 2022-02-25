@@ -7,9 +7,7 @@
  * 
  * Sparkle virtual machine.
  * 
- * @@TODO: compile with 64-bit file offsets
- * 
- * @@TODO: requires sophistry and sophistry-jpeg
+ * See sparkle.c for compilation requirements.
  */
 
 #include <stddef.h>
