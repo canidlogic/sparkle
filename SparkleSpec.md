@@ -58,7 +58,7 @@ This section describes all the supported Sparkle operations, categorized by func
 
 For diagnostic purposes, you may log messages to the console with the following operation:
 
-    [msg] log -
+    [msg] print -
 
 The `[msg]` parameter must be a string.  It is written to standard error, prefixed by an indication that this message was logged by the script.  At the end of the message, a line break is inserted.  The message is logged the moment the operation is encountered while interpreting the script.
 
