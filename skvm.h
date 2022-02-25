@@ -63,6 +63,24 @@ void skvm_init(int32_t bufc, int32_t matc);
 const char *skvm_reason(void);
 
 /*
+ * Return the bufc value that was used to initialize skvm_init().
+ * 
+ * Return:
+ * 
+ *   the bufc value
+ */
+int32_t skvm_bufc(void);
+
+/*
+ * Return the matc value that was used to initialize skvm_init().
+ * 
+ * Return:
+ * 
+ *   the matc value
+ */
+int32_t skvm_matc(void);
+
+/*
  * Reset a specific buffer object.
  * 
  * i is the index of the buffer object to reset.  It must be at least
