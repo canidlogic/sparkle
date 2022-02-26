@@ -112,6 +112,87 @@ JPEG storage is more complicated:
 
 In both of these operations, `[i]` is the buffer register to read from, `[path]` is the path to the file to store to, and `[q]` is the compression quality, which must be an integer (90 is a sensible default value).  The only difference between these two operations is what happens if a file at `[path]` already exists.  The `store_jpeg` operation will overwrite the file if it already exists.  The `store_mjpg` operation, on the other hand, will append the new JPEG file to the end of the file that already exists at that location.  The `store_mjpg` when run multiple times on the same file will thus generate a raw Motion-JPEG (MJPG) sequence.
 
+### Matrix operations
+
+Sparkle has a set of _matrix registers_.  The number of matrix registers available is declared in the header with the `%matcount` directive.
+
+All matrices are 3x3.  Initially, all matrix registers are initialized to the identity matrix:
+
+    | 1 0 0 |
+    | 0 1 0 |
+    | 0 0 1 |
+
+At any time, you can reset a matrix register back to this identity state by using the following command:
+
+    [m] identity -
+
+The matrix register to reset is identified by `[m]`.
+
+Matrix registers are used as transformation matrices in sampling operations (see later).  The matrices are intended to transform coordinates from the space of a source buffer to the coordinate space of a target register like so:
+
+    | x'|   | t11 t12 t13 |   | x |
+    | y'| = | t21 t22 t23 | * | y |
+    | 1 |   |  0   0   1  |   | 1 |
+
+Here, (`x`, `y`) is the coordinate in the source buffer space, and (`x'`, `y'`) is the transformed coordinate in the target buffer space.  The third row of the transformation matrix is always `0 0 1` and the inversion of the transformation matrix also always has `0 0 1` in the third row.  Therefore, only the first two rows of the matrix are actually stored.
+
+The inversion of transformation matrices also needs to be available when sampling operations are performed.  Each matrix register has space for a cached inversion, so that the inversion is only computed once.  All the matrix operations provided by Sparkle are invertible, so the inversion will always be available.  The inversion of a transformation matrix is computed as follows:
+
+           | a b c |
+       A = | d e f |
+           | 0 0 1 |
+
+
+           |    e       -b     bf - ce |
+           | -------  -------  ------- |
+           | ae - bd  ae - bd  ae - bd |
+           |                           |
+           |   -d        a     cd - af |
+    A^-1 = | -------  -------  ------- |
+           | ae - bd  ae - bd  ae - bd |
+           |                           |
+           |                           |
+           |    0        0        1    |
+           |                           |
+
+You can combine matrices using the following operation:
+
+    [m] [a] [b] multiply -
+
+The `[m]` matrix register is set to the result of multiplying the matrix in register `[a]` with the matrix in register `[b]`.  The `[m]` register must be different from the `[a]` and `[b]` registers, but the `[a]` and `[b]` registers are allowed to be the same register.  Note that since coordinate transformation is done by pre-multiplication, matrix `[a]` is the transformation that will be done _after_ the transformation described by matrix `[b]`.  (Matrix multiplication is _not_ commutative, so the order of operands matters.)
+
+The rest of the matrix operations describe specific transformations.  All of these matrix operations take a single matrix register argument, which is then modified by the transformation.  Specifically, the matrix held in the register is _pre-multiplied_ by the matrix describing the transformation, such that the new transformation will be performed _after_ the transformations already encoded in the transformation matrix.
+
+The first transformation available is __translation__ which is invoked by the following operator and pre-multiplies the following matrix to the matrix register:
+
+    [m] [tx] [ty] translate -
+
+    | 1  0  tx |
+    | 0  1  ty |
+    | 0  0  1  |
+
+This has the effect of adding `[tx]` to each X coordinate, and adding `[ty]` to each Y coordinate.  Both `[tx]` and `[ty]` may have any finite value.
+
+The second transformation available is __scaling__ which is invoked by the following operator and pre-multiplies the following matrix to the matrix register:
+
+    [m] [sx] [sy] scale -
+
+    | sx  0   0 |
+    | 0   sy  0 |
+    | 0   0   1 |
+
+Setting both scaling values to 1.0 is equivalent to an identity matrix (which does nothing).  Both scaling values may have any finite value except for zero.  Values greater than 1.0 expand coordinates outwards from the axis while values less than 1.0 compress coordinates towards the axis.  If you make a certain scaling value negative, it has the effect of performing scaling according to the absolute value _and_ reflecting coordinates across the axis.  For example, using an `[sx]` value of -1.0 and a `[sy]` value of 1.0 has the effect of reflecting all X coordinates across the Y axis.
+
+The third transformation available is __rotation__ which is invoked by the following operator and pre-multiplies the following matrix to the matrix register:
+
+    [m] [deg] rotate -
+
+    | cos(deg) -sin(deg)  0 |
+    | sin(deg)  cos(deg)  0 |
+    |    0         0      1 |
+
+The rotation `[deg]` is specified in degrees.  All coordinates are rotated clockwise around the origin by this transformation.  Any finite value can be used for `[deg]`.  A value of zero does nothing.  Values outside the range (-360.0, 360.0) are collapsed into that range with `fmod()` by this function, so you can pass any degree value and it will be reduced appropriately.
+
 ### Sampling operations
 
 _Sampling_ is a sophisticated way of drawing one buffer into another buffer, optionally applying effects such as translation, rotation, scaling, and masking along the way.  Because of its complexity, there is not just one sampling operation, but rather a whole group of sampling operations.  The operation `sample` is used to perform an actual sampling operation, while all the other operations are used to configure the various parameters of the sampling.  Parameters are "sticky" so they remain in effect until they are changed and can therefore be reused in subsequent sampling operations.
