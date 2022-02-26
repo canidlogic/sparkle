@@ -112,11 +112,11 @@ JPEG storage is more complicated:
 
 In both of these operations, `[i]` is the buffer register to read from, `[path]` is the path to the file to store to, and `[q]` is the compression quality, which must be an integer (90 is a sensible default value).  The only difference between these two operations is what happens if a file at `[path]` already exists.  The `store_jpeg` operation will overwrite the file if it already exists.  The `store_mjpg` operation, on the other hand, will append the new JPEG file to the end of the file that already exists at that location.  The `store_mjpg` when run multiple times on the same file will thus generate a raw Motion-JPEG (MJPG) sequence.
 
-## Sampling operations
+### Sampling operations
 
 _Sampling_ is a sophisticated way of drawing one buffer into another buffer, optionally applying effects such as translation, rotation, scaling, and masking along the way.  Because of its complexity, there is not just one sampling operation, but rather a whole group of sampling operations.  The operation `sample` is used to perform an actual sampling operation, while all the other operations are used to configure the various parameters of the sampling.  Parameters are "sticky" so they remain in effect until they are changed and can therefore be reused in subsequent sampling operations.
 
-### Sampling source
+#### Sampling source
 
 The first parameter in a sampling operation is the _source_ which indicates what will be sampled.  This can either be a whole buffer register or a subarea selected from a buffer register.  The following operations are used to configure the sampling source:
 
@@ -129,7 +129,7 @@ You can also select only a subarea of a specific buffer register as the sampling
 
 The buffer register selected by `sample_source_area` does not need to be loaded.  However, in contrast to `sample_source`, the dimensions of the buffer register _are_ relevant.  In addition to using the buffer register dimensions to check its subarea parameter values, `sample_source_area` will also record the buffer register dimensions that were in place when it was called.  Then, when the `sample` operation takes place, a check will be made that the source buffer register is both loaded and has the exact same dimensions as when the `sample_source_area` operation was called, with the sampling operation failing if this is not the case.  (The color channels do not need to be the same, though.)  In other words, the subarea established by `sample_source_area` is also sticky, but whenever `sample` is invoked, the source buffer must have the same dimensions as when the subarea was established, in contrast to `sample_source` for which this constraint does not apply.
 
-### Sampling target
+#### Sampling target
 
 The second parameter in a sampling operation is the _target_ which indicates where the sampled image will be drawn.  You can set the target buffer register with the following operation:
 
@@ -141,7 +141,7 @@ You are allowed to use `sample_target` to set the same buffer register as is spe
 
 Unlike for the sampling source, the sampling target does not allow the specification of subareas.  Instead, you use transformation matrices and masking (described in later subsections), which are much more powerful.
 
-### Transformation matrix
+#### Transformation matrix
 
 The way in which the source buffer is sampled and drawn into the target buffer is controlled by a _transformation matrix._  This is a 3x3, two-dimensional matrix that can transform coordinates from the source buffer into coordinates within the target buffer.  The matrix allows for translation, rotation, mirroring, and scaling.
 
@@ -161,7 +161,7 @@ Here, (`x`, `y`) is a coordinate in the source buffer, and (`x'`, `y'`) is the c
 
 For pixels, the origin of the pixel is a floating-point coordinate that is in the center of the pixel area.  So, for example, the pixel (2, 3) has its pixel origin at (2.5, 3.5).
 
-### Target masking
+#### Target masking
 
 Before sampled pixels are drawn into the target buffer, they are passed through a _masking layer._  The masking layer can either pass the sampled pixel through, prevent the sampled pixel from being drawn, or adjust the transparency of the sampled pixel before it is drawn.  The masking layer allows for matte effects when compositing the sampled image into the target buffer.
 
@@ -217,7 +217,7 @@ All procedural masking effects can also be performed with corresponding raster m
 
 To get back to procedural masking mode from raster masking mode, you must use `sample_mask_none` to reset to the initial, procedural masking state.
 
-### Sampling algorithm
+#### Sampling algorithm
 
 The `sample` operation supports different sampling algorithms.  You can use the following operators to change the sampling mode:
 
@@ -233,7 +233,7 @@ The `sample_bilinear` mode uses bilinear sampling.  This default algorithm is a 
 
 The `sample_bicubic` mode uses bicubic sampling.  This is usually the highest-quality sampling algorithm, but it is also the slowest.
 
-### Sample operation
+#### Sample operation
 
 When you have configured all parameters using the operators described in the preceding sections, you can then perform the actual sampling operation using the following operator:
 
