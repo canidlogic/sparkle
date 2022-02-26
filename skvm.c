@@ -8,6 +8,8 @@
  */
 
 #include "skvm.h"
+
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -64,25 +66,49 @@ typedef struct {
 } SKBUF;
 
 /*
- * Structure used to represent a 3x3 matrix:
+ * Structure used to represent a matrix:
  * 
- * | v11 v12 v13 |
- * | v21 v22 v23 |
- * | v31 v32 v33 |
+ * | a b c |
+ * | d e f |
+ * | 0 0 1 |
+ * 
+ * The third row is always 0 0 1 so it is not stored in the structure.
+ * 
+ * Additionally, this structure can cache the inversion of the matrix.
+ * If the inversion is available, the "cached" member will be set to
+ * a non-zero value, and then the following members will also be
+ * available:
+ * 
+ * | iva ivb ivc |
+ * | ivd ive ivf |
+ * |  0   0   1  |
  */
 typedef struct {
   
-  double v11;
-  double v12;
-  double v13;
+  /*
+   * The matrix values.
+   */
+  double a;
+  double b;
+  double c;
+  double d;
+  double e;
+  double f;
   
-  double v21;
-  double v22;
-  double v23;
+  /*
+   * The cached inverse matrix values, only if "cached" is non-zero.
+   */
+  double iva;
+  double ivb;
+  double ivc;
+  double ivd;
+  double ive;
+  double ivf;
   
-  double v31;
-  double v32;
-  double v33;
+  /*
+   * Flag that is set to non-zero if the inverse matrix is cached.
+   */
+  uint8_t cached;
   
 } SKMAT;
 
@@ -123,6 +149,59 @@ static int32_t m_matc;
  */
 static SKBUF *m_pbuf;
 static SKMAT *m_pmat;
+
+/*
+ * Local functions
+ * ===============
+ */
+
+/* Prototypes */
+static void matrix_mul(SKMAT *pm, const SKMAT *pa, const SKMAT *pb);
+
+/*
+ * Multiply two matrices together and store their result in a third
+ * matrix.
+ * 
+ * The operation performed is:
+ * 
+ *   (*pm) = (*pa) * (*pb)
+ * 
+ * pm may not point to the same matrix structure as pa or pb, but pa and
+ * pb may point to the same structure.
+ * 
+ * This does not check that the results are finite, nor does it cache an
+ * inverse matrix.
+ * 
+ * Parameters:
+ * 
+ *   pm - the matrix to store the result in
+ * 
+ *   pa - the first matrix operand
+ * 
+ *   pb - the second matrix operand
+ */
+static void matrix_mul(SKMAT *pm, const SKMAT *pa, const SKMAT *pb) {
+  
+  /* Check parameters */
+  if ((pm == NULL) || (pa == NULL) || (pb == NULL)) {
+    abort();
+  }
+  if ((pm == pa) || (pm == pb)) {
+    abort();
+  }
+  
+  /* Perform multiplication */
+  pm->a = (pa->a * pb->a) + (pa->b * pb->d);
+  pm->b = (pa->a * pb->b) + (pa->b * pb->e);
+  pm->c = (pa->a * pb->c) + (pa->b * pb->f) + pa->c;
+  
+  pm->d = (pa->d * pb->a) + (pa->e * pb->d);
+  pm->e = (pa->d * pb->b) + (pa->e * pb->e);
+  pm->f = (pa->d * pb->c) + (pa->e * pb->f) + pa->f;
+  
+  /* Clear the cache flag on the result */
+  pm->cached = (uint8_t) 0;
+}
 
 /*
  * Public function implementations
@@ -186,21 +265,18 @@ void skvm_init(int32_t bufc, int32_t matc) {
     ps->c = (uint8_t) 1;
   }
   
-  /* Initialize all matrices to identity */
+  /* Initialize all matrices to identity with cached inverse, which is
+   * also the identity */
   for(i = 0; i < matc; i++) {
     pm = &(m_pmat[i]);
     
-    pm->v11 = 1.0;
-    pm->v12 = 0.0;
-    pm->v13 = 0.0;
+    pm->a = 1.0;    pm->b = 0.0;    pm->c = 0.0;
+    pm->d = 0.0;    pm->e = 1.0;    pm->f = 0.0;
     
-    pm->v21 = 0.0;
-    pm->v22 = 1.0;
-    pm->v23 = 0.0;
+    pm->cached = (uint8_t) 1;
     
-    pm->v31 = 0.0;
-    pm->v32 = 0.0;
-    pm->v33 = 1.0;
+    pm->iva = 1.0;  pm->ivb = 0.0;  pm->ivc = 0.0;
+    pm->ivd = 0.0;  pm->ive = 1.0;  pm->ivf = 0.0;
   }
   
   /* Set the initialized flag */
@@ -1382,4 +1458,228 @@ int skvm_store_jpeg(int32_t i, const char *pPath, int mjpg, int q) {
   
   /* Return status */
   return status;
+}
+
+/*
+ * skvm_matrix_reset function.
+ */
+void skvm_matrix_reset(int32_t m) {
+  
+  SKMAT *pm = NULL;
+  
+  /* Check state */
+  if (!m_init) {
+    abort();
+  }
+  
+  /* Check parameters */
+  if ((m < 0) || (m >= m_matc)) {
+    abort();
+  }
+  
+  /* Get the selected matrix */
+  pm = &(m_pmat[m]);
+  
+  /* Reset to identity, with a cached inversion which is also the
+   * identity matrix */
+  memset(pm, 0, sizeof(SKMAT));
+  
+  pm->a = 1.0;    pm->b = 0.0;    pm->c = 0.0;
+  pm->d = 0.0;    pm->e = 1.0;    pm->f = 0.0;
+  
+  pm->cached = (uint8_t) 1;
+  
+  pm->iva = 1.0;  pm->ivb = 0.0;  pm->ivc = 0.0;
+  pm->ivd = 0.0;  pm->ive = 1.0;  pm->ivf = 0.0;
+}
+
+/*
+ * skvm_matrix_multiply function.
+ */
+void skvm_matrix_multiply(int32_t m, int32_t a, int32_t b) {
+  
+  SKMAT *pm = NULL;
+  SKMAT *pa = NULL;
+  SKMAT *pb = NULL;
+  
+  /* Check state */
+  if (!m_init) {
+    abort();
+  }
+  
+  /* Check parameters */
+  if ((m < 0) || (m >= m_matc) ||
+      (a < 0) || (a >= m_matc) ||
+      (b < 0) || (b >= m_matc)) {
+    abort();
+  }
+  if ((m == a) || (m == b)) {
+    abort();
+  }
+  
+  /* Get the selected matrices */
+  pm = &(m_pmat[m]);
+  pa = &(m_pmat[a]);
+  pb = &(m_pmat[b]);
+  
+  /* Perform multiplication */
+  matrix_mul(pm, pa, pb);
+}
+
+/*
+ * skvm_matrix_translate function.
+ */
+void skvm_matrix_translate(int32_t m, double tx, double ty) {
+  
+  SKMAT *pm = NULL;
+  SKMAT ma;
+  SKMAT mb;
+  
+  /* Initialize structures */
+  memset(&ma, 0, sizeof(SKMAT));
+  memset(&mb, 0, sizeof(SKMAT));
+  
+  /* Check state */
+  if (!m_init) {
+    abort();
+  }
+  
+  /* Check parameters */
+  if ((m < 0) || (m >= m_matc) ||
+      (!isfinite(tx)) ||
+      (!isfinite(ty))) {
+    abort();
+  }
+  
+  /* Only proceed if non-zero translation */
+  if ((tx != 0.0) || (ty != 0.0)) {
+  
+    /* Get the selected matrix */
+    pm = &(m_pmat[m]);
+    
+    /* Copy the matrix to a local variable */
+    memcpy(&mb, pm, sizeof(SKMAT));
+    
+    /* Initialize transform matrix to identity with nothing cached */
+    ma.a = 1.0; ma.b = 0.0; ma.c = 0.0;
+    ma.d = 0.0; ma.e = 1.0; ma.f = 0.0;
+    
+    ma.cached = (uint8_t) 0;
+    
+    /* Set up the translation transform */
+    ma.c = tx;
+    ma.f = ty;
+    
+    /* Premultiply by transform and store result in register */
+    matrix_mul(pm, &ma, &mb);
+  }
+}
+
+/*
+ * skvm_matrix_scale function.
+ */
+void skvm_matrix_scale(int32_t m, double sx, double sy) {
+  
+  SKMAT *pm = NULL;
+  SKMAT ma;
+  SKMAT mb;
+  
+  /* Initialize structures */
+  memset(&ma, 0, sizeof(SKMAT));
+  memset(&mb, 0, sizeof(SKMAT));
+  
+  /* Check state */
+  if (!m_init) {
+    abort();
+  }
+  
+  /* Check parameters */
+  if ((m < 0) || (m >= m_matc) ||
+      (!isfinite(sx)) ||
+      (!isfinite(sy)) ||
+      (sx == 0.0) || (sy == 0.0)) {
+    abort();
+  }
+  
+  /* Only proceed if non-trivial scaling */
+  if ((sx != 1.0) || (sy != 1.0)) {
+  
+    /* Get the selected matrix */
+    pm = &(m_pmat[m]);
+    
+    /* Copy the matrix to a local variable */
+    memcpy(&mb, pm, sizeof(SKMAT));
+    
+    /* Initialize scaling matrix to identity with nothing cached */
+    ma.a = 1.0; ma.b = 0.0; ma.c = 0.0;
+    ma.d = 0.0; ma.e = 1.0; ma.f = 0.0;
+    
+    ma.cached = (uint8_t) 0;
+    
+    /* Set up the scaling transform */
+    ma.a = sx;
+    ma.e = sy;
+    
+    /* Premultiply by transform and store result in register */
+    matrix_mul(pm, &ma, &mb);
+  }
+}
+
+/*
+ * skvm_matrix_rotate function.
+ */
+void skvm_matrix_rotate(int32_t m, double deg) {
+  
+  SKMAT *pm = NULL;
+  SKMAT ma;
+  SKMAT mb;
+  
+  /* Initialize structures */
+  memset(&ma, 0, sizeof(SKMAT));
+  memset(&mb, 0, sizeof(SKMAT));
+  
+  /* Check state */
+  if (!m_init) {
+    abort();
+  }
+  
+  /* Check parameters */
+  if ((m < 0) || (m >= m_matc) || (!isfinite(deg))) {
+    abort();
+  }
+  
+  /* Reduce angle to range (-360.0, 360.0) and convert to radians */
+  if (deg != 0.0) {
+    deg = fmod(deg, 360.0);
+  }
+  if (deg != 0.0) {
+    deg = (deg * M_PI) / 180.0;
+  }
+  
+  /* Only proceed if rotation is not zero */
+  if (deg != 0.0) {
+  
+    /* Get the selected matrix */
+    pm = &(m_pmat[m]);
+    
+    /* Copy the matrix to a local variable */
+    memcpy(&mb, pm, sizeof(SKMAT));
+    
+    /* Initialize rotation matrix to identity with nothing cached */
+    ma.a = 1.0; ma.b = 0.0; ma.c = 0.0;
+    ma.d = 0.0; ma.e = 1.0; ma.f = 0.0;
+    
+    ma.cached = (uint8_t) 0;
+    
+    /* Set up the rotation transform (deg has been converted to radians
+     * already) */
+    ma.a = cos(deg);
+    ma.b = -(sin(deg));
+    
+    ma.d = sin(deg);
+    ma.e = cos(deg);
+    
+    /* Premultiply by transform and store result in register */
+    matrix_mul(pm, &ma, &mb);
+  }
 }
