@@ -615,12 +615,335 @@ static int op_store_mjpg(const char *pModule, long line_num) {
 }
 
 /*
+ * [m] identity -
+ */
+static int op_identity(const char *pModule, long line_num) {
+  
+  int status = 1;
+  int32_t m = 0;
+  
+  /* Check at least one parameter on stack */
+  if (stack_count() < 1) {
+    status = 0;
+    fprintf(stderr, "%s: [Line %ld] Stack underflow on identity!\n",
+      pModule, line_num);
+  }
+  
+  /* Check parameter types */
+  if (status) {
+    if (cell_type(stack_index(0)) != CELLTYPE_INTEGER) {
+      status = 0;
+      fprintf(stderr,
+        "%s: [Line %ld] Wrong param types for identity!\n",
+        pModule, line_num);
+    }
+  }
+  
+  /* Get the parameters */
+  if (status) {
+    m = cell_get_int(stack_index(0));
+  }
+  
+  /* Check register range */
+  if (status) {
+    if ((m < 0) || (m >= skvm_matc())) {
+      status = 0;
+      fprintf(stderr, "%s: [Line %ld] Matrix index out of range!\n",
+        pModule, line_num);
+    }
+  }
+  
+  /* Perform operation */
+  if (status) {
+    skvm_matrix_reset(m);
+  }
+  
+  /* Remove arguments from stack */
+  if (status) {
+    stack_pop(1);
+  }
+  
+  /* Return status */
+  return status;
+}
+
+/*
+ * [m] [a] [b] multiply -
+ */
+static int op_multiply(const char *pModule, long line_num) {
+  
+  int status = 1;
+  int32_t m = 0;
+  int32_t a = 0;
+  int32_t b = 0;
+  
+  /* Check at least three parameters on stack */
+  if (stack_count() < 3) {
+    status = 0;
+    fprintf(stderr, "%s: [Line %ld] Stack underflow on multiply!\n",
+      pModule, line_num);
+  }
+  
+  /* Check parameter types */
+  if (status) {
+    if ((cell_type(stack_index(2)) != CELLTYPE_INTEGER) ||
+        (cell_type(stack_index(1)) != CELLTYPE_INTEGER) ||
+        (cell_type(stack_index(0)) != CELLTYPE_INTEGER)) {
+      status = 0;
+      fprintf(stderr,
+        "%s: [Line %ld] Wrong param types for multiply!\n",
+        pModule, line_num);
+    }
+  }
+  
+  /* Get the parameters */
+  if (status) {
+    m = cell_get_int(stack_index(2));
+    a = cell_get_int(stack_index(1));
+    b = cell_get_int(stack_index(0));
+  }
+  
+  /* Check register ranges */
+  if (status) {
+    if ((m < 0) || (m >= skvm_matc())) {
+      status = 0;
+      fprintf(stderr, "%s: [Line %ld] Matrix index out of range!\n",
+        pModule, line_num);
+    }
+  }
+  if (status) {
+    if ((a < 0) || (a >= skvm_matc())) {
+      status = 0;
+      fprintf(stderr, "%s: [Line %ld] Matrix index out of range!\n",
+        pModule, line_num);
+    }
+  }
+  if (status) {
+    if ((b < 0) || (b >= skvm_matc())) {
+      status = 0;
+      fprintf(stderr, "%s: [Line %ld] Matrix index out of range!\n",
+        pModule, line_num);
+    }
+  }
+  
+  /* Check that result matrix is unique */
+  if (status) {
+    if ((m == a) || (m == b)) {
+      status = 0;
+      fprintf(stderr,
+        "%s: [Line %ld] Result matrix may not overlap operands!\n",
+        pModule, line_num);
+    }
+  }
+  
+  /* Perform operation */
+  if (status) {
+    skvm_matrix_multiply(m, a, b);
+  }
+  
+  /* Remove arguments from stack */
+  if (status) {
+    stack_pop(3);
+  }
+  
+  /* Return status */
+  return status;
+}
+
+/*
+ * [m] [tx] [ty] translate -
+ */
+static int op_translate(const char *pModule, long line_num) {
+  
+  int status = 1;
+  
+  int32_t m = 0;
+  double tx = 0.0;
+  double ty = 0.0;
+  
+  /* Check at least three parameters on stack */
+  if (stack_count() < 3) {
+    status = 0;
+    fprintf(stderr, "%s: [Line %ld] Stack underflow on translate!\n",
+      pModule, line_num);
+  }
+  
+  /* Check parameter types */
+  if (status) {
+    if ((cell_type(stack_index(2)) != CELLTYPE_INTEGER) ||
+        (!cell_canfloat(stack_index(1))) ||
+        (!cell_canfloat(stack_index(0)))) {
+      status = 0;
+      fprintf(stderr,
+        "%s: [Line %ld] Wrong param types for translate!\n",
+        pModule, line_num);
+    }
+  }
+  
+  /* Get the parameters */
+  if (status) {
+    m = cell_get_int(stack_index(2));
+    tx = cell_get_float(stack_index(1));
+    ty = cell_get_float(stack_index(0));
+  }
+  
+  /* Check register range */
+  if (status) {
+    if ((m < 0) || (m >= skvm_matc())) {
+      status = 0;
+      fprintf(stderr, "%s: [Line %ld] Matrix index out of range!\n",
+        pModule, line_num);
+    }
+  }
+  
+  /* Perform operation */
+  if (status) {
+    skvm_matrix_translate(m, tx, ty);
+  }
+  
+  /* Remove arguments from stack */
+  if (status) {
+    stack_pop(3);
+  }
+  
+  /* Return status */
+  return status;
+}
+
+/*
+ * [m] [sx] [sy] scale -
+ */
+static int op_scale(const char *pModule, long line_num) {
+  
+  int status = 1;
+  
+  int32_t m = 0;
+  double sx = 0.0;
+  double sy = 0.0;
+  
+  /* Check at least three parameters on stack */
+  if (stack_count() < 3) {
+    status = 0;
+    fprintf(stderr, "%s: [Line %ld] Stack underflow on scale!\n",
+      pModule, line_num);
+  }
+  
+  /* Check parameter types */
+  if (status) {
+    if ((cell_type(stack_index(2)) != CELLTYPE_INTEGER) ||
+        (!cell_canfloat(stack_index(1))) ||
+        (!cell_canfloat(stack_index(0)))) {
+      status = 0;
+      fprintf(stderr,
+        "%s: [Line %ld] Wrong param types for scale!\n",
+        pModule, line_num);
+    }
+  }
+  
+  /* Get the parameters */
+  if (status) {
+    m = cell_get_int(stack_index(2));
+    sx = cell_get_float(stack_index(1));
+    sy = cell_get_float(stack_index(0));
+  }
+  
+  /* Check register range */
+  if (status) {
+    if ((m < 0) || (m >= skvm_matc())) {
+      status = 0;
+      fprintf(stderr, "%s: [Line %ld] Matrix index out of range!\n",
+        pModule, line_num);
+    }
+  }
+  
+  /* Check that scaling values are non-zero */
+  if (status && ((sx == 0.0) || (sy == 0.0))) {
+    status = 0;
+    fprintf(stderr, "%s: [Line %ld] Scaling value may not be zero!\n",
+      pModule, line_num);
+  }
+  
+  /* Perform operation */
+  if (status) {
+    skvm_matrix_scale(m, sx, sy);
+  }
+  
+  /* Remove arguments from stack */
+  if (status) {
+    stack_pop(3);
+  }
+  
+  /* Return status */
+  return status;
+}
+
+/*
+ * [m] [deg] rotate -
+ */
+static int op_rotate(const char *pModule, long line_num) {
+  
+  int status = 1;
+  
+  int32_t m = 0;
+  double deg = 0.0;
+  
+  /* Check at least two parameters on stack */
+  if (stack_count() < 2) {
+    status = 0;
+    fprintf(stderr, "%s: [Line %ld] Stack underflow on rotate!\n",
+      pModule, line_num);
+  }
+  
+  /* Check parameter types */
+  if (status) {
+    if ((cell_type(stack_index(1)) != CELLTYPE_INTEGER) ||
+        (!cell_canfloat(stack_index(0)))) {
+      status = 0;
+      fprintf(stderr,
+        "%s: [Line %ld] Wrong param types for rotate!\n",
+        pModule, line_num);
+    }
+  }
+  
+  /* Get the parameters */
+  if (status) {
+    m = cell_get_int(stack_index(1));
+    deg = cell_get_float(stack_index(0));
+  }
+  
+  /* Check register range */
+  if (status) {
+    if ((m < 0) || (m >= skvm_matc())) {
+      status = 0;
+      fprintf(stderr, "%s: [Line %ld] Matrix index out of range!\n",
+        pModule, line_num);
+    }
+  }
+  
+  /* Perform operation */
+  if (status) {
+    skvm_matrix_rotate(m, deg);
+  }
+  
+  /* Remove arguments from stack */
+  if (status) {
+    stack_pop(2);
+  }
+  
+  /* Return status */
+  return status;
+}
+
+/*
  * Registration function
  * =====================
  */
 
 void skcore_register(void) {
+  /* Diagnostic ops */
   register_operator("print", &op_print);
+  
+  /* Load/store ops */
   register_operator("reset", &op_reset);
   register_operator("load_png", &op_load_png);
   register_operator("load_jpeg", &op_load_jpeg);
@@ -629,4 +952,11 @@ void skcore_register(void) {
   register_operator("store_png", &op_store_png);
   register_operator("store_jpeg", &op_store_jpeg);
   register_operator("store_mjpg", &op_store_mjpg);
+  
+  /* Matrix ops */
+  register_operator("identity", &op_identity);
+  register_operator("multiply", &op_multiply);
+  register_operator("translate", &op_translate);
+  register_operator("scale", &op_scale);
+  register_operator("rotate", &op_rotate);
 }
