@@ -308,4 +308,96 @@ int skvm_store_png(int32_t i, const char *pPath);
  */
 int skvm_store_jpeg(int32_t i, const char *pPath, int mjpg, int q);
 
+/*
+ * Reset a given matrix register to the identity.
+ * 
+ * m is the index of the matrix register.  It must be at least zero and
+ * less than the matc value passed to skvm_init().
+ * 
+ * Parameters:
+ * 
+ *   m - the matrix register
+ */
+void skvm_matrix_reset(int32_t m);
+
+/*
+ * Multiply two matrix registers together and store the result in a
+ * third.
+ * 
+ * The operation performed is:
+ * 
+ *     m = a * b
+ * 
+ * All three arguments must be matrix registers that are at least zero
+ * and less than the matc value passed to skvm_init().
+ * 
+ * In addition, the m register may not be the same as either the a or b
+ * registers.  However, the a and b registers may be the same.
+ * 
+ * Parameters:
+ * 
+ *   m - the matrix register to store the result in
+ * 
+ *   a - the first matrix register operand
+ * 
+ *   b - the second matrix register operand
+ */
+void skvm_matrix_multiply(int32_t m, int32_t a, int32_t b);
+
+/*
+ * Premultiply a matrix register by a translation transform.
+ * 
+ * m is the index of the matrix register.  It must be at least zero and
+ * less than the matc value passed to skvm_init().
+ * 
+ * tx and ty are the translations that are done on X coordinates and Y
+ * coordinates, respectively.  Both values must be finite.
+ * 
+ * Parameters:
+ * 
+ *   m - the matrix register to modify
+ * 
+ *   tx - the X translation
+ * 
+ *   ty - the Y translation
+ */
+void skvm_matrix_translate(int32_t m, double tx, double ty);
+
+/*
+ * Premultiply a matrix register by a scaling transform.
+ * 
+ * m is the index of the matrix register.  It must be at least zero and
+ * less than the matc value passed to skvm_init().
+ * 
+ * sx and sy are the scaling values for the X and Y coordinates,
+ * respectively.  They may have any finite, non-zero value.
+ * 
+ * Parameters:
+ * 
+ *   m - the matrix register to modify
+ * 
+ *   sx - the X axis scaling value
+ * 
+ *   sy - the Y axis scaling value
+ */
+void skvm_matrix_scale(int32_t m, double sx, double sy);
+
+/*
+ * Premultiply a matrix register by a rotation transform.
+ * 
+ * m is the index of the matrix register.  It must be at least zero and
+ * less than the matc value passed to skvm_init().
+ * 
+ * deg is the clockwise rotation angle in degrees.  It may be any finite
+ * value.  Values outside the range (-360.0, 360.0) are automatically
+ * reduced to this range by this function.
+ * 
+ * Parameters:
+ * 
+ *   m - the matrix register to modify
+ * 
+ *   deg - the clockwise rotation in degrees
+ */
+void skvm_matrix_rotate(int32_t m, double deg);
+
 #endif
