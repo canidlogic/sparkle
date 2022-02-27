@@ -935,6 +935,68 @@ static int op_rotate(const char *pModule, long line_num) {
 }
 
 /*
+ * [i] color_invert -
+ */
+static int op_color_invert(const char *pModule, long line_num) {
+  
+  int status = 1;
+  int32_t i = 0;
+  
+  /* Check at least one parameter on stack */
+  if (stack_count() < 1) {
+    status = 0;
+    fprintf(stderr, "%s: [Line %ld] Stack underflow on invert!\n",
+      pModule, line_num);
+  }
+  
+  /* Check parameter types */
+  if (status) {
+    if (cell_type(stack_index(0)) != CELLTYPE_INTEGER) {
+      status = 0;
+      fprintf(stderr,
+        "%s: [Line %ld] Wrong param types for invert!\n",
+        pModule, line_num);
+    }
+  }
+  
+  /* Get the parameters */
+  if (status) {
+    i = cell_get_int(stack_index(0));
+  }
+  
+  /* Check register range */
+  if (status) {
+    if ((i < 0) || (i >= skvm_bufc())) {
+      status = 0;
+      fprintf(stderr, "%s: [Line %ld] Register index out of range!\n",
+        pModule, line_num);
+    }
+  }
+  
+  /* Check that register is loaded */
+  if (status) {
+    if (!skvm_is_loaded(i)) {
+      status = 0;
+      fprintf(stderr, "%s: [Line %ld] Register is not loaded!\n",
+        pModule, line_num);
+    }
+  }
+  
+  /* Perform operation */
+  if (status) {
+    skvm_color_invert(i);
+  }
+  
+  /* Remove arguments from stack */
+  if (status) {
+    stack_pop(1);
+  }
+  
+  /* Return status */
+  return status;
+}
+
+/*
  * Registration function
  * =====================
  */
@@ -959,4 +1021,7 @@ void skcore_register(void) {
   register_operator("translate", &op_translate);
   register_operator("scale", &op_scale);
   register_operator("rotate", &op_rotate);
+  
+  /* Color ops */
+  register_operator("color_invert", &op_color_invert);
 }
