@@ -592,4 +592,18 @@ void skvm_matrix_rotate(int32_t m, double deg);
  */
 void skvm_sample(SKVM_SAMPLE_PARAM *ps);
 
+/*
+ * Invert all the color channels (except alpha) in a specific buffer.
+ * 
+ * i is the index of the buffer object to store.  It must be at least
+ * zero and less than the bufc value passed to skvm_init().
+ * 
+ * If the buffer is not currently loaded, a fault will occur.
+ * 
+ * Parameters:
+ * 
+ *   i - the buffer to invert
+ */
+void skvm_color_invert(int32_t i);
+
 #endif
