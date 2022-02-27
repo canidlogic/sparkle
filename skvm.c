@@ -2757,3 +2757,55 @@ void skvm_sample(SKVM_SAMPLE_PARAM *ps) {
     }
   }
 }
+
+/*
+ * skvm_color_invert function.
+ */
+void skvm_color_invert(int32_t i) {
+  
+  SKBUF *ps = NULL;
+  int32_t total_comp = 0;
+  int32_t j = 0;
+  int c = 0;
+  
+  /* Check state */
+  if (!m_init) {
+    abort();
+  }
+  
+  /* Check parameters */
+  if ((i < 0) || (i >= m_bufc)) {
+    abort();
+  }
+  
+  /* Get buffer register */
+  ps = &(m_pbuf[i]);
+  
+  /* Fault if buffer is not loaded */
+  if (ps->pData == NULL) {
+    abort();
+  }
+  
+  /* Calculate the total number of components */
+  total_comp = ps->w * ps->h * ps->c;
+  
+  /* Invert all components, except not the alpha channel in ARGB */
+  for(j = 0; j < total_comp; j++) {
+  
+    /* If we are in ARGB mode and this is an alpha channel, skip it */
+    if (ps->c == 4) {
+      if ((j % 4) == 0) {
+        continue;
+      }
+    }
+    
+    /* Get current component */
+    c = (ps->pData)[j];
+    
+    /* Invert it */
+    c = 255 - c;
+    
+    /* Update current component */
+    (ps->pData)[j] = (uint8_t) c;
+  }
+}
