@@ -587,6 +587,73 @@ int32_t skvm_matc(void) {
 }
 
 /*
+ * skvm_get_dim function.
+ */
+void skvm_get_dim(int32_t i, int32_t *pw, int32_t *ph) {
+  
+  /* Check state */
+  if (!m_init) {
+    abort();
+  }
+  
+  /* Check parameters */
+  if ((i < 0) || (i >= m_bufc) || (pw == NULL) || (ph == NULL)) {
+    abort();
+  }
+  
+  /* Return the requested information */
+  *pw = (m_pbuf[i]).w;
+  *ph = (m_pbuf[i]).h;
+}
+
+/*
+ * skvm_get_channels function.
+ */
+int skvm_get_channels(int32_t i) {
+  
+  /* Check state */
+  if (!m_init) {
+    abort();
+  }
+  
+  /* Check parameters */
+  if ((i < 0) || (i >= m_bufc)) {
+    abort();
+  }
+  
+  /* Return the requested information */
+  return (m_pbuf[i]).c;
+}
+
+/*
+ * skvm_is_loaded function.
+ */
+int skvm_is_loaded(int32_t i) {
+  
+  int result = 0;
+  
+  /* Check state */
+  if (!m_init) {
+    abort();
+  }
+  
+  /* Check parameters */
+  if ((i < 0) || (i >= m_bufc)) {
+    abort();
+  }
+  
+  /* Determine if loaded */
+  if ((m_pbuf[i]).pData != NULL) {
+    result = 1;
+  } else {
+    result = 0;
+  }
+  
+  /* Return the requested information */
+  return result;
+}
+
+/*
  * skvm_reset function.
  */
 void skvm_reset(int32_t i, int32_t w, int32_t h, int c) {
