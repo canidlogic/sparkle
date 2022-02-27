@@ -112,6 +112,14 @@ JPEG storage is more complicated:
 
 In both of these operations, `[i]` is the buffer register to read from, `[path]` is the path to the file to store to, and `[q]` is the compression quality, which must be an integer (90 is a sensible default value).  The only difference between these two operations is what happens if a file at `[path]` already exists.  The `store_jpeg` operation will overwrite the file if it already exists.  The `store_mjpg` operation, on the other hand, will append the new JPEG file to the end of the file that already exists at that location.  The `store_mjpg` when run multiple times on the same file will thus generate a raw Motion-JPEG (MJPG) sequence.
 
+### Color operations
+
+The following operation can modify the colors within a buffer:
+
+    [i] color_invert -
+
+This is a special effect that inverts all the color channels except for the alpha channel.  Color components that have a range of [0, 255] are inverted with the value (255 - c).
+
 ### Matrix operations
 
 Sparkle has a set of _matrix registers_.  The number of matrix registers available is declared in the header with the `%matcount` directive.
