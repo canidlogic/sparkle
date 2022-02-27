@@ -27,6 +27,131 @@
 #define SKVM_MAX_DIM    (16384)
 
 /*
+ * Constants for selecting a sampling algorithm.
+ */
+#define SKVM_ALG_NEAREST  (1)   /* Nearest neighbor */
+#define SKVM_ALG_BILINEAR (2)   /* Bilinear */
+#define SKVM_ALG_BICUBIC  (3)   /* Bicubic */
+
+/*
+ * Flags for the sample operation.
+ */
+#define SKVM_FLAG_SUBAREA     (1)
+#define SKVM_FLAG_PROCMASK    (2)
+#define SKVM_FLAG_RASTERMASK  (4)
+#define SKVM_FLAG_LEFTMODE    (8)
+#define SKVM_FLAG_RIGHTMODE   (16)
+#define SKVM_FLAG_ABOVEMODE   (32)
+#define SKVM_FLAG_BELOWMODE   (64)
+
+/*
+ * Structure storing all the parameters necessary for a sampling
+ * operation.
+ */
+typedef struct {
+  
+  /*
+   * The index of the source buffer to sample from.
+   * 
+   * Must not be the same as target_buf.  If raster masking is in
+   * effect, must not be the same as mask_buf either.
+   */
+  int32_t src_buf;
+  
+  /*
+   * The index of the target buffer to draw into.
+   * 
+   * Must not be the same as src_buf.  If raster masking is in effect,
+   * must not be the same as mask_buf either.
+   */
+  int32_t target_buf;
+  
+  /*
+   * The index of the raster masking buffer.
+   * 
+   * Only relevant if raster masking is in effect, otherwise ignored.
+   * If in effect, may not be the same as src_buf or target_buf.
+   */
+  int32_t mask_buf;
+  
+  /*
+   * The subarea of the source buffer to sample.
+   * 
+   * Only relevant if subarea mode is in effect, otherwise these will be
+   * set at the start of the sampling operation to encompass the whole
+   * source buffer.
+   */
+  int32_t src_x;
+  int32_t src_y;
+  int32_t src_w;
+  int32_t src_h;
+  
+  /*
+   * The index of the transformation matrix.
+   * 
+   * This matrix, when premultiplied to coordinates in the source area,
+   * maps the coordinates to the target space.  The inverse matrix maps
+   * from target space to source space.
+   */
+  int32_t t_matrix;
+  
+  /*
+   * The X boundary line, if procedural masking is in effect.
+   * 
+   * Must be in normalized range [0.0, 1.0].  Ignored if raster masking
+   * is in effect.
+   */
+  double x_boundary;
+  
+  /*
+   * The Y boundary line, if procedural masking is in effect.
+   * 
+   * Must be in normalized range [0.0, 1.0].  Ignored if raster masking
+   * is in effect.
+   */
+  double y_boundary;
+  
+  /*
+   * The sampling algorithm to use.
+   * 
+   * Must be one of the SKVM_ALG_ constants.
+   */
+  int sample_alg;
+  
+  /*
+   * Various flags, this is a combination of SKVM_FLAG_ constants,
+   * combined together with |
+   * 
+   * If you want to enable subarea mode, use SKVM_FLAG_SUBAREA.  If this
+   * flag is enabled, the src_ fields in this structure specify a
+   * subarea of the source buffer to sample.  Otherwise, the whole area
+   * within the source buffer will be used.
+   * 
+   * If you are using procedural masking, use the SKVM_FLAG_PROCMASK
+   * flag, and combine it with either SKVM_FLAG_LEFTMODE or
+   * SKVM_FLAG_RIGHTMODE, and either SKVM_FLAG_ABOVEMODE or
+   * SKVM_FLAG_BELOWMODE.  You should have three flags specified, one
+   * selecting procedural masking mode, one selecting either left or
+   * right mode, and one selecting either above or below mode.  The
+   * x_boundary and y_boundary fields will in this case determine where
+   * the boundary lines are for the procedural mask.
+   * 
+   * If you are using raster masking, use the SKVM_FLAG_RASTERMASK flag.
+   * In this case, mask_buf selects the buffer that will be used as a
+   * raster mask.
+   * 
+   * You must use either procedural masking or raster masking.  If you
+   * don't want any masking, use:
+   * 
+   *   SKVM_FLAG_PROCMASK | SKVM_FLAG_LEFTMODE | SKVM_FLAG_ABOVEMODE
+   * 
+   * and then set both x_boundary and y_boundary to 0.0.
+   */
+  int flags;
+  
+} SKVM_SAMPLE_PARAM;
+
+/*
  * Initialize the Sparkle virtual machine.
  * 
  * You must call this function before using any of the other functions
@@ -399,5 +524,21 @@ void skvm_matrix_scale(int32_t m, double sx, double sy);
  *   deg - the clockwise rotation in degrees
  */
 void skvm_matrix_rotate(int32_t m, double deg);
+
+/*
+ * Perform a sampling operation.
+ * 
+ * The parameters for the operation are given in the provided structure.
+ * See the structure documentation for further information, and also see
+ * SparkleSpec.md for further information about how the sampling
+ * operation works.
+ * 
+ * The given structure may be modified by this procedure.
+ * 
+ * Parameters:
+ * 
+ *   ps - the sampling parameters
+ */
+void skvm_sample(SKVM_SAMPLE_PARAM *ps);
 
 #endif
