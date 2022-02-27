@@ -206,6 +206,57 @@ int32_t skvm_bufc(void);
 int32_t skvm_matc(void);
 
 /*
+ * Get the current pixel dimensions of a given buffer object.
+ * 
+ * i is the index of the buffer object to query.  It must be at least
+ * zero and less than the bufc value passed to skvm_init().
+ * 
+ * The width and height of the buffer is written to *pw and *ph.
+ * 
+ * Parameters:
+ * 
+ *   i - the buffer to query
+ * 
+ *   pw - pointer to variable to receive the width
+ * 
+ *   ph - pointer to variable to receive the height
+ */
+void skvm_get_dim(int32_t i, int32_t *pw, int32_t *ph);
+
+/*
+ * Get the current number of channels of a given buffer object.
+ * 
+ * i is the index of the buffer object to query.  It must be at least
+ * zero and less than the bufc value passed to skvm_init().
+ * 
+ * Parameters:
+ * 
+ *   i - the buffer to query
+ * 
+ * Return:
+ * 
+ *   the current number of color channels in the buffer, which is either
+ *   1 (grayscale), 3 (RGB), or 4 (ARGB)
+ */
+int skvm_get_channels(int32_t i);
+
+/*
+ * Check whether a given buffer object is currently loaded.
+ * 
+ * i is the index of the buffer object to query.  It must be at least
+ * zero and less than the bufc value passed to skvm_init().
+ * 
+ * Parameters:
+ * 
+ *   i - the buffer to query
+ * 
+ * Return:
+ * 
+ *   non-zero if buffer is currently loaded, zero if not
+ */
+int skvm_is_loaded(int32_t i);
+
+/*
  * Reset a specific buffer object.
  * 
  * i is the index of the buffer object to reset.  It must be at least
