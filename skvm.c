@@ -113,6 +113,28 @@ typedef struct {
 } SKMAT;
 
 /*
+ * Structure used to represent an (x,y) coordinate.
+ */
+typedef struct {
+  
+  double x;
+  double y;
+  
+} SKPOINT;
+
+/*
+ * Structure used to represent floating-point **PREMULTIPLIED** ARGB.
+ */
+typedef struct {
+  
+  double a;
+  double r;
+  double g;
+  double b;
+  
+} SKARGB;
+
+/*
  * Static data
  * ===========
  */
@@ -156,7 +178,244 @@ static SKMAT *m_pmat;
  */
 
 /* Prototypes */
+static void source2target(SKMAT *pt, SKPOINT *pp);
+static void target2source(SKMAT *pt, SKPOINT *pp);
+
+static void sample_nearest(
+    const SKBUF   * pb,
+    const SKPOINT * pp,
+          SKARGB  * pr);
+static void sample_bilinear(
+    const SKBUF   * pb,
+    const SKPOINT * pp,
+          SKARGB  * pr);
+static void sample_bicubic(
+    const SKBUF   * pb,
+    const SKPOINT * pp,
+          SKARGB  * pr);
+    
 static void matrix_mul(SKMAT *pm, const SKMAT *pa, const SKMAT *pb);
+
+/*
+ * Given a transformation matrix and a point, convert the point from
+ * source space to target space.
+ * 
+ * Parameters:
+ * 
+ *   pt - the transformation matrix
+ * 
+ *   pp - the point to convert
+ */
+static void source2target(SKMAT *pt, SKPOINT *pp) {
+  
+  double rx = 0.0;
+  double ry = 0.0;
+  
+  /* Check parameters */
+  if ((pt == NULL) || (pp == NULL)) {
+    abort();
+  }
+  
+  /* Multiply the matrix by the expanded vector to get the result */
+  rx = (pt->a * pp->x) + (pt->b * pp->y) + pt->c;
+  ry = (pt->d * pp->x) + (pt->e * pp->y) + pt->f;
+  
+  /* Write result to point */
+  pp->x = rx;
+  pp->y = ry;
+}
+
+/*
+ * Given a transformation matrix and a point, convert the point from
+ * target space to source space.
+ * 
+ * Parameters:
+ * 
+ *   pt - the transformation matrix
+ * 
+ *   pp - the point to convert
+ */
+static void target2source(SKMAT *pt, SKPOINT *pp) {
+  
+  double denom = 0.0;
+  double rx = 0.0;
+  double ry = 0.0;
+  
+  /* Check parameters */
+  if ((pt == NULL) || (pp == NULL)) {
+    abort();
+  }
+  
+  /* If inversion is not yet cached, compute it and cache it */
+  if (!(pt->cached)) {
+    denom = (pt->a * pt->e) - (pt->b * pt->d);
+    
+    pt->iva = pt->e / denom;
+    pt->ivb = -(pt->b / denom);
+    pt->ivc = ((pt->b * pt->f) - (pt->c * pt->e)) / denom;
+    
+    pt->ivd = -(pt->d / denom);
+    pt->ive = pt->a / denom;
+    pt->ivf = ((pt->c * pt->d) - (pt->a * pt->f)) / denom;
+    
+    pt->cached = (uint8_t) 1;
+  }
+  
+  /* Multiply the inverted matrix by the expanded vector to get the
+   * result */
+  rx = (pt->iva * pp->x) + (pt->ivb * pp->y) + pt->ivc;
+  ry = (pt->ivd * pp->x) + (pt->ive * pp->y) + pt->ivf;
+  
+  /* Write result to point */
+  pp->x = rx;
+  pp->y = ry;
+}
+
+/*
+ * Perform nearest-neighbor interpolation.
+ * 
+ * pb is the buffer to sample from.  It must be loaded.
+ * 
+ * pp is the point within the buffer to sample.  It must be somewhere
+ * within the boundaries of the buffer.
+ * 
+ * pr receives the sampled, premultiplied ARGB value.
+ * 
+ * Parameters:
+ * 
+ *   pb - the buffer
+ * 
+ *   pp - the point
+ * 
+ *   pr - receives the sampled color
+ */
+static void sample_nearest(
+    const SKBUF   * pb,
+    const SKPOINT * pp,
+          SKARGB  * pr) {
+  
+  int32_t x = 0;
+  int32_t y = 0;
+  uint8_t *pt = NULL;
+  
+  /* Check parameters */
+  if ((pb == NULL) || (pp == NULL) || (pr == NULL)) {
+    abort();
+  }
+  
+  /* Make sure that buffer is loaded */
+  if (pb->pData == NULL) {
+    abort();
+  }
+  
+  /* For nearest neighbor, we just have to floor both coordinates and
+   * then clamp them to the allowable range */
+  x = (int32_t) floor(pp->x);
+  y = (int32_t) floor(pp->y);
+  
+  if (x < 0) {
+    x = 0;
+  } else if (x > pb->w - 1) {
+    x = pb->w - 1;
+  }
+  
+  if (y < 0) {
+    y = 0;
+  } else if (y > pb->h - 1) {
+    y = pb->h - 1;
+  }
+  
+  /* Now seek to the pixel within the source data */
+  pt = pb->pData;
+  pt += (y * (pb->w * pb->c));
+  pt += (x * pb->c);
+  
+  /* Load depending on number of channels */
+  if (pb->c == 1) {
+    /* Grayscale */
+    pr->a = 1.0;
+    pr->r = ((double) *pt) / 255.0;
+    pr->g = pr->r;
+    pr->b = pr->r;
+    
+  } else if (pb->c == 3) {
+    /* RGB */
+    pr->a = 1.0;
+    pr->r = ((double) pt[0]) / 255.0;
+    pr->g = ((double) pt[1]) / 255.0;
+    pr->b = ((double) pt[2]) / 255.0;
+    
+  } else if (pb->c == 4) {
+    /* ARGB, so first load non-premultiplied */
+    pr->a = ((double) pt[0]) / 255.0;
+    pr->r = ((double) pt[1]) / 255.0;
+    pr->g = ((double) pt[2]) / 255.0;
+    pr->b = ((double) pt[3]) / 255.0;
+    
+    /* Now perform premultiplication */
+    pr->r = pr->r * pr->a;
+    pr->g = pr->g * pr->a;
+    pr->b = pr->b * pr->a;
+    
+  } else {
+    /* Shouldn't happen */
+    abort();
+  }
+}
+
+/*
+ * Perform bilinear interpolation.
+ * 
+ * pb is the buffer to sample from.  It must be loaded.
+ * 
+ * pp is the point within the buffer to sample.  It must be somewhere
+ * within the boundaries of the buffer.
+ * 
+ * pr receives the sampled, premultiplied ARGB value.
+ * 
+ * Parameters:
+ * 
+ *   pb - the buffer
+ * 
+ *   pp - the point
+ * 
+ *   pr - receives the sampled color
+ */
+static void sample_bilinear(
+    const SKBUF   * pb,
+    const SKPOINT * pp,
+          SKARGB  * pr) {
+  /* @@TODO: */
+  fprintf(stderr, "Bilinear interpolation not implemented yet!\n");
+  abort();
+}
+
+/*
+ * Perform bicubic interpolation.
+ * 
+ * pb is the buffer to sample from.  It must be loaded.
+ * 
+ * pp is the point within the buffer to sample.  It must be somewhere
+ * within the boundaries of the buffer.
+ * 
+ * pr receives the sampled, premultiplied ARGB value.
+ * 
+ * Parameters:
+ * 
+ *   pb - the buffer
+ * 
+ *   pp - the point
+ * 
+ *   pr - receives the sampled color
+ */
+static void sample_bicubic(
+    const SKBUF   * pb,
+    const SKPOINT * pp,
+          SKARGB  * pr) {
+  /* @@TODO: */
+  fprintf(stderr, "Bicubic interpolation not implemented yet!\n");
+  abort();
+}
 
 /*
  * Multiply two matrices together and store their result in a third
@@ -1681,5 +1940,753 @@ void skvm_matrix_rotate(int32_t m, double deg) {
     
     /* Premultiply by transform and store result in register */
     matrix_mul(pm, &ma, &mb);
+  }
+}
+
+/*
+ * skvm_sample function.
+ */
+void skvm_sample(SKVM_SAMPLE_PARAM *ps) {
+  
+  int     i = 0;
+  int32_t x = 0;
+  int32_t y = 0;
+  int32_t stride = 0;
+  double  mv = 0.0;
+  
+        uint8_t * pt = NULL;
+  const uint8_t * pm = NULL;
+        uint8_t * pscan = NULL;
+  const uint8_t * pscan_m = NULL;
+  
+  const SKBUF * pSrc = NULL;
+  const SKBUF * pMask = NULL;
+        SKMAT * pMatrix = NULL;
+        SKBUF * pTarget = NULL;
+  
+  SKPOINT pnt;
+  SKARGB  rcol;
+  SKARGB  tcol;
+  SKARGB  fcol;
+  SKPOINT corners[4];
+  SPH_ARGB argb;
+  
+  double f_min_x = 0.0;
+  double f_min_y = 0.0;
+  double f_max_x = 0.0;
+  double f_max_y = 0.0;
+  
+  int32_t bound_x = 0;
+  int32_t bound_y = 0;
+  int32_t min_x = 0;
+  int32_t min_y = 0;
+  int32_t max_x = 0;
+  int32_t max_y = 0;
+  
+  /* Initialize arrays and structures */
+  memset(&pnt, 0, sizeof(SKPOINT));
+  memset(&rcol, 0, sizeof(SKARGB));
+  memset(&tcol, 0, sizeof(SKARGB));
+  memset(&fcol, 0, sizeof(SKARGB));
+  memset(&argb, 0, sizeof(SPH_ARGB));
+  memset(corners, 0, sizeof(SKPOINT) * 4);
+  
+  /* Check state */
+  if (!m_init) {
+    abort();
+  }
+  
+  /* Check parameter */
+  if (ps == NULL) {
+    abort();
+  }
+  
+  /* ===================================== *
+   *                                       *
+   * INTERNAL PARAMETER CONSISTENCY CHECKS *
+   *                                       *
+   * ===================================== */
+  
+  /* Check that either procedural masking or raster masking mode
+   * selected, but not both */
+  if ((ps->flags & SKVM_FLAG_PROCMASK) &&
+      (ps->flags & SKVM_FLAG_RASTERMASK)) {
+    abort();
+  }
+  if (((ps->flags & SKVM_FLAG_PROCMASK) == 0) &&
+      ((ps->flags & SKVM_FLAG_RASTERMASK) == 0)) {
+    abort();
+  }
+  
+  /* If procedural mode, check that exactly one flag from each mode
+   * group is selected */
+  if (ps->flags & SKVM_FLAG_PROCMASK) {
+    if ((ps->flags & SKVM_FLAG_LEFTMODE) &&
+        (ps->flags & SKVM_FLAG_RIGHTMODE)) {
+      abort();
+    }
+    if (((ps->flags & SKVM_FLAG_LEFTMODE) == 0) &&
+        ((ps->flags & SKVM_FLAG_RIGHTMODE) == 0)) {
+      abort();
+    }
+    
+    if ((ps->flags & SKVM_FLAG_ABOVEMODE) &&
+        (ps->flags & SKVM_FLAG_BELOWMODE)) {
+      abort();
+    }
+    if (((ps->flags & SKVM_FLAG_ABOVEMODE) == 0) &&
+        ((ps->flags & SKVM_FLAG_BELOWMODE) == 0)) {
+      abort();
+    }
+  }
+  
+  /* Check that the buffer indices are valid */
+  if ((ps->src_buf < 0) || (ps->src_buf >= m_bufc) ||
+      (ps->target_buf < 0) || (ps->target_buf >= m_bufc)) {
+    abort();
+  }
+  if (ps->flags & SKVM_FLAG_RASTERMASK) {
+    if ((ps->mask_buf < 0) || (ps->mask_buf >= m_bufc)) {
+      abort();
+    }
+  }
+  
+  /* Check that buffer indices are unique */
+  if (ps->src_buf == ps->target_buf) {
+    abort();
+  }
+  if (ps->flags & SKVM_FLAG_RASTERMASK) {
+    if ((ps->src_buf == ps->mask_buf) ||
+        (ps->target_buf == ps->mask_buf)) {
+      abort();
+    }
+  }
+  
+  /* Check that matrix buffer is valid */
+  if ((ps->t_matrix < 0) || (ps->t_matrix >= m_matc)) {
+    abort();
+  }
+  
+  /* If procedural masking, check that boundary fields are finite and
+   * in normalized range */
+  if (ps->flags & SKVM_FLAG_PROCMASK) {
+    if ((!isfinite(ps->x_boundary)) || (!isfinite(ps->y_boundary))) {
+      abort();
+    }
+    if ((!((ps->x_boundary >= 0.0) && (ps->x_boundary <= 1.0))) ||
+        (!((ps->y_boundary >= 0.0) && (ps->y_boundary <= 1.0)))) {
+      abort();
+    }
+  }
+  
+  /* Check that sampling algorithm is valid */
+  if ((ps->sample_alg != SKVM_ALG_NEAREST) &&
+      (ps->sample_alg != SKVM_ALG_BILINEAR) &&
+      (ps->sample_alg != SKVM_ALG_BICUBIC)) {
+    abort();
+  }
+  
+  /* ======================================= *
+   *                                         *
+   * GET BUFFERS AND FINISH PARAMETER CHECKS *
+   *                                         *
+   * ======================================= */
+  
+  /* Get the buffers */
+  pSrc    = &(m_pbuf[ps->src_buf   ]);
+  pTarget = &(m_pbuf[ps->target_buf]);
+  if (ps->flags & SKVM_FLAG_RASTERMASK) {
+    pMask = &(m_pbuf[ps->mask_buf  ]);
+  }
+  
+  /* If subarea mode, check that subarea is within the source buffer,
+   * else set the subarea fields to encompass the whole source buffer */
+  if (ps->flags & SKVM_FLAG_SUBAREA) {
+    /* Subarea specified, so first check that (x,y) coordinates are
+     * within buffer */
+    if ((ps->src_x < 0) || (ps->src_x >= pSrc->w)) {
+      abort();
+    }
+    if ((ps->src_y < 0) || (ps->src_y >= pSrc->h)) {
+      abort();
+    }
+    
+    /* Next, check that width and height are greater than zero */
+    if ((ps->src_w < 1) || (ps->src_h < 1)) {
+      abort();
+    }
+    
+    /* Finally, check that (x + width) <= src_width and also that
+     * (y + height) <= src_height */
+    if ((ps->src_x > pSrc->w - ps->src_w) ||
+        (ps->src_y > pSrc->h - ps->src_h)) {
+      abort();
+    }
+    
+  } else {
+    /* No subarea specified, so set to whole source buffer */
+    ps->src_x = 0;
+    ps->src_y = 0;
+    ps->src_w = pSrc->w;
+    ps->src_h = pSrc->h;
+  }
+  
+  /* If raster masking is in effect, mask buffer must have exact same
+   * dimensions as target buffer, and mask buffer must be grayscale */
+  if (ps->flags & SKVM_FLAG_RASTERMASK) {
+    if ((pMask->w != pTarget->w) || (pMask->h != pTarget->h)) {
+      abort();
+    }
+    if (pMask->c != 1) {
+      abort();
+    }
+  }
+  
+  /* All buffers must be loaded */
+  if ((pSrc->pData == NULL) || (pTarget->pData == NULL)) {
+    abort();
+  }
+  if (ps->flags & SKVM_FLAG_RASTERMASK) {
+    if (pMask->pData == NULL) {
+      abort();
+    }
+  }
+  
+  /* ========================== *
+   *                            *
+   * DETERMINE RENDERING BOUNDS *
+   *                            *
+   * ========================== */
+  
+  /* Get the transformation matrix */
+  pMatrix = &(m_pmat[ps->t_matrix]);
+  
+  /* Write the corners of the source area into the corner array */
+  corners[0].x = ps->src_x;
+  corners[0].y = ps->src_y;
+  
+  corners[1].x = ps->src_x + ps->src_w;
+  corners[1].y = ps->src_y;
+  
+  corners[2].x = ps->src_x;
+  corners[2].y = ps->src_y + ps->src_h;
+  
+  corners[3].x = ps->src_x + ps->src_w;
+  corners[3].y = ps->src_y + ps->src_h;
+  
+  /* Transform all the corners from source space to target space */
+  source2target(pMatrix, &(corners[0]));
+  source2target(pMatrix, &(corners[1]));
+  source2target(pMatrix, &(corners[2]));
+  source2target(pMatrix, &(corners[3]));
+  
+  /* Figure out the bounding box around the transformed corner
+   * coordinates */
+  f_min_x = corners[0].x;
+  f_max_x = corners[0].x;
+  
+  f_min_y = corners[0].y;
+  f_max_y = corners[0].y;
+  
+  for(i = 1; i < 4; i++) {
+    if (corners[i].x > f_max_x) {
+      f_max_x = corners[i].x;
+    } else if (corners[i].x < f_min_x) {
+      f_min_x = corners[i].x;
+    }
+    
+    if (corners[i].y > f_max_y) {
+      f_max_y = corners[i].y;
+    } else if (corners[i].y < f_min_y) {
+      f_min_y = corners[i].y;
+    }
+  }
+
+  /* Take the floor of the minimums and the ceiling of the maximums to
+   * expand the bounding box outward to encompass whole pixels */
+  f_min_x = floor(f_min_x);
+  f_min_y = floor(f_min_y);
+  
+  f_max_x = ceil(f_max_x);
+  f_max_y = ceil(f_max_y);
+  
+  /* Make sure these boundary coordinates are finite and within range of
+   * signed 32-bit integers */
+  if ((!isfinite(f_min_x)) || (!isfinite(f_min_y)) ||
+      (!isfinite(f_max_x)) || (!isfinite(f_max_y))) {
+    fprintf(stderr, "Numeric problem during sparkle sampling!\n");
+    abort();
+  }
+  
+  if ((f_min_x < (double) INT32_MIN) ||
+        (f_max_x > (double) INT32_MAX) ||
+        (f_min_y < (double) INT32_MIN) ||
+        (f_max_y > (double) INT32_MAX)) {
+    abort();
+  }
+  
+  /* Now convert to integers */
+  min_x = (int32_t) f_min_x;
+  min_y = (int32_t) f_min_y;
+  
+  max_x = (int32_t) f_max_x;
+  max_y = (int32_t) f_max_y;
+
+  /* Consistency check */
+  if ((min_x > max_x) || (min_y > max_y)) {
+    fprintf(stderr, "Numeric problem during sparkle sampling!\n");
+    abort();
+  }
+  
+  /* If the maximum X is negative or the maximum Y is negative, then
+   * the intersection with the target area is empty so we can leave */
+  if ((max_x < 0) || (max_y < 0)) {
+    return;
+  }
+  
+  /* If the minimum X is greater than or equal to the width or the
+   * minimum Y is greater than or equal to the height, then the
+   * intersection with the target area is empty so we can leave */
+  if ((min_x >= pTarget->w) || (min_y >= pTarget->h)) {
+    return;
+  }
+  
+  /* If we got here, maximum X and maximum Y are at least zero, so clamp
+   * them so that they are at most one less than the width or height */
+  if (max_x > pTarget->w - 1) {
+    max_x = pTarget->w - 1;
+  }
+  if (max_y > pTarget->h - 1) {
+    max_y = pTarget->h - 1;
+  }
+  
+  /* If we got here, minimum X and minimum Y are less than the width or
+   * height respectively, so clamp them so that they are at least
+   * zero */
+  if (min_x < 0) {
+    min_x = 0;
+  }
+  if (min_y < 0) {
+    min_y = 0;
+  }
+  
+  /* If we are in procedural masking mode, intersect the rendering area
+   * with the part of the target that is not masked */
+  if (ps->flags & SKVM_FLAG_PROCMASK) {
+    
+    /* Get integer versions of the bounds */
+    if (ps->x_boundary == 0.0) {
+      bound_x = 0;
+      
+    } else if (ps->x_boundary == 1.0) {
+      bound_x = pTarget->w - 1;
+      
+    } else {
+      bound_x = (int32_t) floor(ps->x_boundary *
+                                  ((double) (pTarget->w - 1)));
+    }
+    
+    if (ps->y_boundary == 0.0) {
+      bound_y = 0;
+      
+    } else if (ps->y_boundary == 1.0) {
+      bound_y = pTarget->h - 1;
+      
+    } else {
+      bound_y = (int32_t) floor(ps->y_boundary *
+                                  ((double) (pTarget->h - 1)));
+    }
+
+    /* Handle the X boundary based on left or right mode */
+    if (ps->flags & SKVM_FLAG_LEFTMODE) {
+      /* Left mode, so only draw area where x >= boundary; if max_x is
+       * less than boundary, nothing to draw so leave */
+      if (max_x < bound_x) {
+        return;
+      }
+      
+      /* If we got here, max_x is in bounds, so now just clamp min_x to
+       * boundary */
+      if (min_x < bound_x) {
+        min_x = bound_x;
+      }
+      
+    } else if (ps->flags & SKVM_FLAG_RIGHTMODE) {
+      /* Right mode, so only draw area where x <= boundary; if min_x is
+       * greater than boundary, nothing to draw so leave */
+      if (min_x > bound_x) {
+        return;
+      }
+      
+      /* If we got here, min_x is in bounds, so now just clamp max_x to
+       * boundary */
+      if (max_x > bound_x) {
+        max_x = bound_x;
+      }
+      
+    } else {
+      /* Shouldn't happen */
+      abort();
+    }
+    
+    /* Handle the Y boundary based on above or below mode */
+    if (ps->flags & SKVM_FLAG_BELOWMODE) {
+      /* Below mode, so only draw area where y <= boundary; if min_y is
+       * greater than boundary, nothing to draw so leave */
+      if (min_y > bound_y) {
+        return;
+      }
+      
+      /* If we got here, min_y is in bounds, so now just clamp max_y to
+       * boundary */
+      if (max_y > bound_y) {
+        max_y = bound_y;
+      }
+      
+    } else if (ps->flags & SKVM_FLAG_ABOVEMODE) {
+      /* Above mode, so only draw area where y >= boundary; if max_y is
+       * less than boundary, nothing to draw so leave */
+      if (max_y < bound_y) {
+        return;
+      }
+      
+      /* If we got here, max_y is in bounds, so now just clamp min_y to
+       * boundary */
+      if (min_y < bound_y) {
+        min_y = bound_y;
+      }
+      
+    } else {
+      /* Shouldn't happen */
+      abort();
+    }
+  }
+  
+  /* ============== *
+   *                *
+   * RENDERING LOOP *
+   *                *
+   * ============== */
+  
+  /* Compute the stride between scanlines within the target pixel data,
+   * and also establish pt as a pointer to the start of the first pixel
+   * to render in the target buffer */
+  stride = pTarget->w * ((int32_t) pTarget->c);
+  pt = pTarget->pData;
+  pt += (stride * min_y);
+  pt += (min_x * ((int32_t) pTarget->c));
+  
+  /* Establish pm as a pointer to the first pixel mask value in the
+   * raster mask, if raster masking is enabled */
+  if (ps->flags & SKVM_FLAG_RASTERMASK) {
+    pm = pMask->pData;
+    pm += (pMask->w * min_y);
+    pm += min_x;
+  }
+  
+  /* We will now iterate over every pixel in the rendering boundaries of
+   * the target, which we just computed in order to perform the
+   * rendering operation */
+  for(y = min_y; y <= max_y; y++) {
+    /* Save the pointer to the start of this rendering scanline */
+    pscan = pt;
+    if (ps->flags & SKVM_FLAG_RASTERMASK) {
+      pscan_m = pm;
+    }
+    
+    for(x = min_x; x <= max_x; x++) {
+      /* If raster masking mode is on, proceed to next pixel without
+       * rendering if this mask value is zero */
+      if (ps->flags & SKVM_FLAG_RASTERMASK) {
+        if (*pm == 0) {
+          /* Move to the next pixel to render */
+          pt = pt + pTarget->c;
+          pm++;
+         
+          /* Continue loop */
+          continue;
+        }
+      }
+      
+      /* Project the current target location into source space */
+      pnt.x = (double) x;
+      pnt.y = (double) y;
+      
+      target2source(pMatrix, &pnt);
+      
+      if ((!isfinite(pnt.x)) || (!isfinite(pnt.y))) {
+        fprintf(stderr, "Numeric problem during sparkle sampling!\n");
+        abort();
+      }
+      
+      /* Only proceed if projected point is within the source area */
+      if ((pnt.x >= (double) ps->src_x) &&
+          (pnt.x <= (double) (ps->src_x + ps->src_w)) &&
+          (pnt.y >= (double) ps->src_y) &&
+          (pnt.y <= (double) (ps->src_y + ps->src_h))) {
+      
+        /* Sample the point within the source */
+        if (ps->sample_alg == SKVM_ALG_NEAREST) {
+          sample_nearest(pSrc, &pnt, &rcol);
+          
+        } else if (ps->sample_alg == SKVM_ALG_BILINEAR) {
+          sample_bilinear(pSrc, &pnt, &rcol);
+          
+        } else if (ps->sample_alg == SKVM_ALG_BICUBIC) {
+          sample_bicubic(pSrc, &pnt, &rcol);
+          
+        } else {
+          /* Shouldn't happen */
+          abort();
+        }
+      
+        /* If raster masking is in effect and the current mask value is
+         * not full white, then multiply all of the (premultiplied)
+         * channels by the normalized mask value to make them more
+         * transparent */
+        if (ps->flags & SKVM_FLAG_RASTERMASK) {
+          if (*pm != 255) {
+            mv = ((double) *pm) / 255.0;
+            rcol.a *= mv;
+            rcol.r *= mv;
+            rcol.g *= mv;
+            rcol.b *= mv;
+          }
+        }
+      
+        /* Get the current target pixel color and convert it to
+         * premultiplied ARGB */
+        if (pTarget->c == 1) {
+          /* Grayscale conversion */
+          tcol.a = 1.0;
+          tcol.r = ((double) *pt) / 255.0;
+          tcol.g = tcol.r;
+          tcol.b = tcol.r;
+          
+        } else if (pTarget->c == 3) {
+          /* RGB conversion */
+          tcol.a = 1.0;
+          tcol.r = ((double) pt[0]) / 255.0;
+          tcol.g = ((double) pt[1]) / 255.0;
+          tcol.b = ((double) pt[2]) / 255.0;
+          
+        } else if (pTarget->c == 4) {
+          /* Non-premultiplied ARGB to premultiplied ARGB conversion */
+          tcol.a = ((double) pt[0]) / 255.0;
+          tcol.r = ((double) pt[1]) / 255.0;
+          tcol.g = ((double) pt[2]) / 255.0;
+          tcol.b = ((double) pt[3]) / 255.0;
+          
+          tcol.r = tcol.r * tcol.a;
+          tcol.g = tcol.g * tcol.a;
+          tcol.b = tcol.b * tcol.a;
+          
+        } else {
+          /* Shouldn't happen */
+          abort();
+        }
+      
+        /* Composite rcol OVER tcol and store result in fcol */
+        fcol.a = rcol.a + (tcol.a * (1.0 - rcol.a));
+        fcol.r = rcol.r + (tcol.r * (1.0 - rcol.a));
+        fcol.g = rcol.g + (tcol.g * (1.0 - rcol.a));
+        fcol.b = rcol.b + (tcol.b * (1.0 - rcol.a));
+      
+        /* Check for finite results */
+        if ((!isfinite(fcol.a)) ||
+            (!isfinite(fcol.r)) ||
+            (!isfinite(fcol.g)) |
+            (!isfinite(fcol.b))) {
+          fprintf(stderr, "Numeric problem during sparkle sampling!\n");
+          abort();
+        }
+      
+        /* Store to target buffer depending on channel count */
+        if (pTarget->c == 1) {
+          /* Grayscale, so we know alpha channel should be fully opaque
+           * since background pixel was fully opaque; begin by writing
+           * each of the color channels into the integer ARGB structure
+           * with the opacity set to 255 */
+          argb.a = 255;
+          argb.r = (int) floor(fcol.r * 255.0);
+          argb.g = (int) floor(fcol.g * 255.0);
+          argb.b = (int) floor(fcol.b * 255.0);
+          
+          /* Clamp channels */
+          if (argb.r < 0) {
+            argb.r = 0;
+          } else if (argb.r > 255) {
+            argb.r = 255;
+          }
+          
+          if (argb.g < 0) {
+            argb.g = 0;
+          } else if (argb.g > 255) {
+            argb.g = 255;
+          }
+          
+          if (argb.b < 0) {
+            argb.b = 0;
+          } else if (argb.b > 255) {
+            argb.b = 255;
+          }
+          
+          /* Down-convert to grayscale */
+          sph_argb_downGray(&argb);
+          
+          /* Store the resulting grayscale value */
+          *pt = (uint8_t) argb.g;
+          
+        } else if (pTarget->c == 3) {
+          /* RGB, so we know alpha channel should be fully opaque since
+           * background pixel was fully opaque; begin by writing each of
+           * the color channels into the integer ARGB structure with the
+           * opacity set to 255 */
+          argb.a = 255;
+          argb.r = (int) floor(fcol.r * 255.0);
+          argb.g = (int) floor(fcol.g * 255.0);
+          argb.b = (int) floor(fcol.b * 255.0);
+          
+          /* Clamp channels */
+          if (argb.r < 0) {
+            argb.r = 0;
+          } else if (argb.r > 255) {
+            argb.r = 255;
+          }
+          
+          if (argb.g < 0) {
+            argb.g = 0;
+          } else if (argb.g > 255) {
+            argb.g = 255;
+          }
+          
+          if (argb.b < 0) {
+            argb.b = 0;
+          } else if (argb.b > 255) {
+            argb.b = 255;
+          }
+          
+          /* Store the RGB value */
+          pt[0] = (uint8_t) argb.r;
+          pt[1] = (uint8_t) argb.g;
+          pt[2] = (uint8_t) argb.b;
+          
+        } else if (pTarget->c == 4) {
+          /* ARGB, so we need to convert back to non-premultiplied
+           * before storing; first of all, get the integer value for the
+           * alpha channel, which is the same in both representations */
+          argb.a = (int) floor(fcol.a);
+          
+          /* Clamp alpha */
+          if (argb.a < 0) {
+            argb.a = 0;
+          } else if (argb.a > 255) {
+            argb.a = 255;
+          }
+          
+          /* Conversion depends on whether alpha channel is zero */
+          if (argb.a < 1) {
+            /* Alpha channel is zero, so store transparent black */
+            pt[0] = (uint8_t) 0;
+            pt[1] = (uint8_t) 0;
+            pt[2] = (uint8_t) 0;
+            pt[3] = (uint8_t) 0;
+            
+          } else {
+            /* Alpha channel is non-zero, and we know it's not so close
+             * to zero that it would cause numeric problems, so convert
+             * the other channels to non-premultiplied */
+            fcol.r = fcol.r / fcol.a;
+            fcol.g = fcol.g / fcol.a;
+            fcol.b = fcol.b / fcol.a;
+            
+            /* Finite check */
+            if ((!isfinite(fcol.r)) ||
+                (!isfinite(fcol.g)) ||
+                (!isfinite(fcol.b))) {
+              fprintf(stderr,
+                "Numeric problem during sparkle sampling!\n");
+              abort();
+            }
+            
+            /* Clamp to range in float */
+            if (!(fcol.r <= 1.0)) {
+              fcol.r = 1.0;
+            } else if (!(fcol.r >= 0.0)) {
+              fcol.r = 0.0;
+            }
+            
+            if (!(fcol.g <= 1.0)) {
+              fcol.g = 1.0;
+            } else if (!(fcol.g >= 0.0)) {
+              fcol.g = 0.0;
+            }
+            
+            if (!(fcol.b <= 1.0)) {
+              fcol.b = 1.0;
+            } else if (!(fcol.b >= 0.0)) {
+              fcol.b = 0.0;
+            }
+            
+            /* Convert to integer channels */
+            argb.a = (int) floor(fcol.a * 255.0);
+            argb.r = (int) floor(fcol.r * 255.0);
+            argb.g = (int) floor(fcol.g * 255.0);
+            argb.b = (int) floor(fcol.b * 255.0);
+            
+            /* Clamp channels */
+            if (argb.a < 0) {
+              argb.a = 0;
+            } else if (argb.a > 255) {
+              argb.a = 255;
+            }
+            
+            if (argb.r < 0) {
+              argb.r = 0;
+            } else if (argb.r > 255) {
+              argb.r = 255;
+            }
+            
+            if (argb.g < 0) {
+              argb.g = 0;
+            } else if (argb.g > 255) {
+              argb.g = 255;
+            }
+            
+            if (argb.b < 0) {
+              argb.b = 0;
+            } else if (argb.b > 255) {
+              argb.b = 255;
+            }
+            
+            /* Store the ARGB value */
+            pt[0] = (uint8_t) argb.a;
+            pt[1] = (uint8_t) argb.r;
+            pt[2] = (uint8_t) argb.g;
+            pt[3] = (uint8_t) argb.b;
+          }
+          
+        } else {
+          /* Shouldn't happen */
+          abort();
+        }
+      }
+      
+      /* Move to the next pixel to render */
+      pt = pt + pTarget->c;
+      if (ps->flags & SKVM_FLAG_RASTERMASK) {
+        pm++;
+      }
+    }
+    
+    /* If this is not the last rendering iteration, move to the next
+     * rendering scanline using the pointer we saved at the start of
+     * this loop iteration */
+    if (y < max_y) {
+      pt = pscan + stride;
+      if (ps->flags & SKVM_FLAG_RASTERMASK) {
+        pm = pscan_m + pMask->w;
+      }
+    }
   }
 }
