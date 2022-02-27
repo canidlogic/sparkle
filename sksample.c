@@ -276,6 +276,9 @@ static int op_sample(const char *pModule, long line_num) {
   if (status) {
     skvm_sample(&sp);
   }
+  
+  /* Return status */
+  return status;
 }
 
 /*
