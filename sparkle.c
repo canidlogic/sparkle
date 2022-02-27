@@ -63,6 +63,7 @@
  */
 
 #include "skcore.h"
+#include "sksample.h"
 
 /*
  * Constants
@@ -844,6 +845,7 @@ void stack_pop(int32_t count) {
 static void register_modules(void) {
   /* Call the operator module registration functions here */
   skcore_register();
+  sksample_register();
 }
 
 /*
