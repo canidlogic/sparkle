@@ -588,7 +588,7 @@ static int op_sample_mask_x(const char *pModule, long line_num) {
   
   /* Check parameter types */
   if (status) {
-    if (cell_canfloat(stack_index(0))) {
+    if (!cell_canfloat(stack_index(0))) {
       status = 0;
       fprintf(stderr,
         "%s: [Line %ld] Wrong types for sample_mask_x\n",
@@ -655,7 +655,7 @@ static int op_sample_mask_y(const char *pModule, long line_num) {
   
   /* Check parameter types */
   if (status) {
-    if (cell_canfloat(stack_index(0))) {
+    if (!cell_canfloat(stack_index(0))) {
       status = 0;
       fprintf(stderr,
         "%s: [Line %ld] Wrong types for sample_mask_y\n",
